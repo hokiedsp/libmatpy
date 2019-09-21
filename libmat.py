@@ -2,11 +2,12 @@
 
 from ctypes import *
 import numpy as np
+import platform
+import os
+import sys
 
-# C API opaque objects
 
-
-class MATFile(Structure):
+class MATFile(Structure):  # C API opaque objects
     pass
 
 
@@ -19,8 +20,13 @@ class mxArray(Structure):
 
 mxArray_p = POINTER(mxArray)
 
+libexts = {'Linux': '.so',
+           'Darwin': '.dylib',
+           'Windows': '.dll'}
+libext = libexts[platform.system()]
+
 # C API loading & registering arguments
-_libmat = cdll.LoadLibrary('libmat.dll')
+_libmat = cdll.LoadLibrary('libmat'+libext)
 _libmat.matOpen_800.restype = MATFile_p
 _libmat.matOpen_800.argtypes = [POINTER(c_char), POINTER(c_char)]
 _libmat.matClose_800.restype = c_int
@@ -36,19 +42,20 @@ _libmat.matGetNextVariableInfo_800.argtypes = [
     MATFile_p, POINTER(POINTER(c_char))]
 _libmat.matPutVariable_800.restype = c_int
 _libmat.matPutVariable_800.argtypes = [MATFile_p, POINTER(c_char), mxArray_p]
-# _libmat.matPutVariableAsGlobal_800.restype = c_int
-# _libmat.matPutVariableAsGlobal_800.argtypes = [MATFile_p, POINTER(c_char), mxArray_p]
+_libmat.matPutVariableAsGlobal_800.restype = c_int
+_libmat.matPutVariableAsGlobal_800.argtypes = [
+    MATFile_p, POINTER(c_char), mxArray_p]
 _libmat.matDeleteVariable_800.restype = c_int
 _libmat.matDeleteVariable_800.argtypes = [MATFile_p, POINTER(c_char)]
 _libmat.matGetDir_800.restype = POINTER(c_char_p)
 _libmat.matGetDir_800.argtypes = [MATFile_p, POINTER(c_int)]
-# _libmat.matGetFp_800
-# _libmat.mxIsFromGlobalWS_800
+_libmat.matGetFp_800.restype = c_void_p
+_libmat.matGetFp_800.argtypes = [MATFile_p]
 _libmat.matGetErrno_800.restype = c_int
 _libmat.matGetErrno_800.argtypes = [MATFile_p]
 
 # C API for matrix operations
-_libmx = cdll.LoadLibrary("libmx.dll")
+_libmx = cdll.LoadLibrary('libmx'+libext)
 _libmx.mxMalloc_800.restype = c_void_p
 _libmx.mxMalloc_800.argtypes = [c_size_t]
 _libmx.mxCalloc_800.restype = c_void_p
@@ -403,7 +410,6 @@ class matlab_array:
         if self._infoonly:
             raise InfoOnlyArray()
 
-        mxData = _libmx.mxGetData_800(self._pm)
         sz = self.size()
         dims = self.shape()
 
@@ -458,7 +464,8 @@ class matlab_array:
                           if cfgs[i]['istype'](self._pm)), len(cfgs))
             if index < len(cfgs):
                 cfg = cfgs[index]
-                pdata = (cfg['getcdata'](self._pm) if iscplx else cfg['getdata'](self._pm))
+                pdata = (cfg['getcdata'](self._pm)
+                         if iscplx else cfg['getdata'](self._pm))
                 if sz == 1:
                     return pdata[0]
                 return to_nd_array(pdata, (cfg['ctype'] if iscplx else cfg['type']))
@@ -476,7 +483,7 @@ class matlab_array:
             rval += (dims[i],)
         return rval
 
-    def type(self):
+    def mtype(self):
         if _libmx.mxGetClassID_800(self._pm) == 0:
             return 'class'
         else:
@@ -486,6 +493,8 @@ class matlab_array:
 class matfile:
 
     def __init__(self, path, mode='r'):
+        if not os.path.exists(path):
+            path = os.path.join(sys.path[0],path)
         self._mfp = _libmat.matOpen_800(
             path.encode('utf-8'), mode.encode('utf-8'))
         if not self._mfp:
@@ -494,13 +503,26 @@ class matfile:
         self._mode = mode
 
     def __del__(self):
-        _libmat.matClose_800(self._mfp)
+        if self._mfp:
+            _libmat.matClose_800(self._mfp)
 
     def __copy__(self):
         raise NoShallowCopy()
 
     def __deepcopy__(self, memo):
         return matfile(self.path, self._mode)
+
+    def __getitem__(self, key):
+        return self.getVariable(key)
+
+    def __setitem__(self, key, val):
+        self.setVariable(key, val)
+
+    def __delitem__(self, key):
+        return self.deleteVariable(key)
+    
+    def __len__(self):
+        return len(self.getDir())
 
     def getVariable(self, varname):  # Array from MAT-file
         array = _libmat.matGetVariable_800(self._mfp, varname.encode('utf-8'))
