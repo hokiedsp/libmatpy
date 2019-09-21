@@ -12,15 +12,15 @@
 1. Download libmat.py into the appropriate place in your project folder
 2. Add path to the Matlab folder containing libmat and libmx libraries to `os.environ['PATH']`
 
-For Matlab R2019a on Windows, 
+    For Matlab R2019a on Windows, 
 
-```python
-import os
-matlabdir = 'C:\\Program Files\\MATLAB\\R2019a\\bin\\win64'
-os.environ['PATH'] = matlabdir+os.pathsep+os.environ['PATH']
-```
+    ```python
+    import os
+    matlabdir = 'C:\\Program Files\\MATLAB\\R2019a\\bin\\win64'
+    os.environ['PATH'] = matlabdir+os.pathsep+os.environ['PATH']
+    ```
 
-Here, it's important to prepend the Matlab path to avoid `libmat.dll` to load incorrect dependent DLLs.
+    Here, it's important to prepend the Matlab path to avoid `libmat.dll` to load incorrect dependent DLLs.
 
 ### Alternate way
 
