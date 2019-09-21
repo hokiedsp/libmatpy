@@ -24,7 +24,7 @@
 
 ### Alternate way
 
-This Python module could also be by using this repository as a whole as a git submodule of your project. In that case, the submodule directory becomes Python package, and you can access the 2 classes in the module as `libmatpy.matfile` and `libmatpy.matlab_array` assuming the submodule directory is named `libmatpy`
+This Python module could also be included to a project by using this repository as a whole as a git submodule of your project. In that case, the submodule directory becomes Python package, and you can access the 2 classes in the module as `libmatpy.matfile` and `libmatpy.matlab_array` assuming the submodule directory is named `libmatpy`
 
 ## Basic Use
 
