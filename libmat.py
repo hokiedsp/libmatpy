@@ -9,6 +9,9 @@ import sys
 
 matlabdir = ""
 
+libexts = {"Linux": ".so", "Darwin": ".dylib", "Windows": ".dll"}
+libext = libexts[platform.system()]
+
 # to hold ctypes.cdll objects
 _libmat = None
 _libmx = None
@@ -121,10 +124,389 @@ class ComplexU64(Structure):
     _fields_ = [("real", c_uint64), ("imag", c_uint64)]
 
 
-libexts = {'Linux': '.so',
-           'Darwin': '.dylib',
-           'Windows': '.dll'}
-libext = libexts[platform.system()]
+class libMATException(Exception):
+    pass
+
+
+class InvalidMATFile(libMATException):
+    def __init__(self, *args):
+        if len(args):
+            super().__init__(self, *args)
+        else:
+            super().__init__(self, "Specified file is not a valid Matlab MAT file.")
+
+
+class InvalidMATVariable(libMATException):
+    def __init__(self, *args):
+        if len(args):
+            super().__init__(self, *args)
+        else:
+            super().__init__(
+                self, "Specified variable is not found in this  Matlab MAT file."
+            )
+
+
+class NoShallowCopy(libMATException):
+    def __init__(self, *args):
+        if len(args):
+            super().__init__(self, *args)
+        else:
+            super().__init__(self, "Shallow copy is not allowed. Always use deep copy.")
+
+
+class InfoOnlyArray(libMATException):
+    def __init__(self, *args):
+        if len(args):
+            super().__init__(self, *args)
+        else:
+            super().__init__(self, "This matlab_array object does not contain data.")
+
+
+def make_nd_array(c_pointer, size, shape, dtype, order="C"):
+    arr_size = size * np.dtype(dtype).itemsize
+    buf_from_mem = pythonapi.PyMemoryView_FromMemory
+    buf_from_mem.restype = py_object
+    buf_from_mem.argtypes = (c_void_p, c_int, c_int)
+    buffer = buf_from_mem(c_pointer, arr_size, 0x100)
+    arr = np.ndarray(shape, dtype, buffer, order=order)
+    return arr
+
+
+class matlab_array:
+    def __init__(self, mxSrc, infoonly=False, destroy=True):
+        _load_libmx()
+        self._pm = mxSrc
+        self._infoonly = infoonly
+        self._destroy = destroy
+
+    def __del__(self):
+        if self._destroy:
+            _libmx.mxDestroyArray_800(self._pm)
+            self._pm = None
+            self._destroy = False
+
+    def __bool__(self):
+        return not _libmx.mxIsEmpty_800(self._pm) or (
+            _libmx.mxIsLogicalScalar_800(self._pm)
+            and not _libmx.mxIsLogicalScalarTrue_800(self._pm)
+        )
+
+    def __copy__(self):
+        raise NoShallowCopy()
+
+    def __deepcopy__(self, memo):
+        return matlab_array(_libmx.mxDuplicateArray_800(self._pm), self._infoonly)
+
+    def data(self):
+        if self._infoonly:
+            raise InfoOnlyArray()
+
+        sz = self.size()
+        dims = self.shape()
+
+        def to_nd_array(c_pointer, dtype):
+            return make_nd_array(c_pointer, sz, dims, dtype)
+
+        if _libmx.mxIsChar_800(self._pm):
+            s = cast(
+                _libmx.mxGetChars_800(self._pm), POINTER(c_wchar * sz)
+            ).contents.value
+            if sz == 0:
+                return ""
+            elif len(dims) == 2 and dims[0] == 1:  # single string
+                return s
+            else:  # array of characters
+                return np.array(list(s)).reshape(dims)
+
+                # return to_nd_array(_libmx.mxGetChars_800(self._pm), 'U1')
+        elif _libmx.mxIsStruct_800(self._pm):
+            nfields = _libmx.mxGetNumberOfFields_800(self._pm)
+            if sz == 0:  # create empty dictionary
+                return dict()
+            elif sz == 1:  # create dictionary
+                return dict(
+                    [
+                        (
+                            _libmx.mxGetFieldNameByNumber_800(self._pm, i).decode(
+                                "utf-8"
+                            ),
+                            matlab_array(
+                                _libmx.mxGetFieldByNumber_800(self._pm, 0, i),
+                                False,
+                                False,
+                            ),
+                        )
+                        for i in range(nfields)
+                    ]
+                )
+            else:
+                return np.array(
+                    [
+                        matlab_array(
+                            _libmx.mxGetFieldByNumber_800(self._pm, 0, i), False, False
+                        )
+                        for i in range(sz)
+                    ],
+                    [
+                        (
+                            _libmx.mxGetFieldNameByNumber_800(self._pm, i).decode(
+                                "utf-8"
+                            ),
+                            np.object_,
+                        )
+                        for i in range(nfields)
+                    ],
+                ).reshape(dims)
+        elif _libmx.mxIsEmpty_800(self._pm):
+            return None
+        elif _libmx.mxIsCell_800(self._pm):  # create ndarray of matlab_arrays
+
+            def cellisstr(i):
+                pcm = _libmx.mxGetCell_800(self._pm, i)
+                return (
+                    _libmx.mxIsChar_800(pcm)
+                    and _libmx.mxGetNumberOfDimensions_800(pcm) == 2
+                    and _libmx.mxGetDimensions_800(pcm)[0] == 1
+                )
+
+            if next((i for i in range(sz) if not cellisstr(i)), -1) < 0:
+                # found cellstr
+                return np.array(
+                    [
+                        cast(
+                            _libmx.mxGetChars_800(_libmx.mxGetCell_800(self._pm, i)),
+                            POINTER(c_wchar * sz),
+                        ).contents.value
+                        for i in range(sz)
+                    ]).reshape(dims)
+            elif sz == 1:
+                return matlab_array(_libmx.mxGetCell_800(self._pm, 0), False, False)
+            else:
+                return np.array(
+                    [
+                        matlab_array(_libmx.mxGetCell_800(self._pm, i), False, False)
+                        for i in range(sz)
+                    ],
+                    np.object_,
+                ).reshape(dims)
+        elif _libmx.mxIsLogical_800(self._pm):
+            if sz == 1:
+                return _libmx.mxIsLogicalScalarTrue_800(self._pm)
+            else:
+                return to_nd_array(_libmx.mxGetLogicals_800(self._pm), np.bool)
+        else:  # numeric
+            iscplx = _libmx.mxIsComplex_800(self._pm)
+
+            cfgs = {
+                0: {
+                    "istype": _libmx.mxIsDouble_800,
+                    "getdata": _libmx.mxGetDoubles_800,
+                    "getcdata": _libmx.mxGetComplexDoubles_800,
+                    "type": np.float64,
+                    "ctype": np.complex128,
+                },
+                1: {
+                    "istype": _libmx.mxIsSingle_800,
+                    "getdata": _libmx.mxGetSingles_800,
+                    "getcdata": _libmx.mxGetComplexSingles_800,
+                    "type": np.float32,
+                    "ctype": np.complex64,
+                },
+                2: {
+                    "istype": _libmx.mxIsInt8_800,
+                    "getdata": _libmx.mxGetInt8s_800,
+                    "getcdata": _libmx.mxGetComplexInt8s_800,
+                    "type": np.int8,
+                    "ctype": np.dtype([("real", np.int8), ("imag", np.int8)]),
+                },
+                3: {
+                    "istype": _libmx.mxIsUint8_800,
+                    "getdata": _libmx.mxGetUint8s_800,
+                    "getcdata": _libmx.mxGetComplexUint8s_800,
+                    "type": np.uint8,
+                    "ctype": np.dtype([("real", np.uint8), ("imag", np.uint8)]),
+                },
+                4: {
+                    "istype": _libmx.mxIsInt16_800,
+                    "getdata": _libmx.mxGetInt16s_800,
+                    "getcdata": _libmx.mxGetComplexInt16s_800,
+                    "type": np.int16,
+                    "ctype": np.dtype([("real", np.int16), ("imag", np.int16)]),
+                },
+                5: {
+                    "istype": _libmx.mxIsUint16_800,
+                    "getdata": _libmx.mxGetUint16s_800,
+                    "getcdata": _libmx.mxGetComplexUint16s_800,
+                    "type": np.uint16,
+                    "ctype": np.dtype([("real", np.uint16), ("imag", np.uint16)]),
+                },
+                6: {
+                    "istype": _libmx.mxIsInt32_800,
+                    "getdata": _libmx.mxGetInt32s_800,
+                    "getcdata": _libmx.mxGetComplexInt32s_800,
+                    "type": np.int32,
+                    "ctype": np.dtype([("real", np.int32), ("imag", np.int32)]),
+                },
+                7: {
+                    "istype": _libmx.mxIsUint32_800,
+                    "getdata": _libmx.mxGetUint32s_800,
+                    "getcdata": _libmx.mxGetComplexUint32s_800,
+                    "type": np.uint32,
+                    "ctype": np.dtype([("real", np.uint32), ("imag", np.uint32)]),
+                },
+                8: {
+                    "istype": _libmx.mxIsInt64_800,
+                    "getdata": _libmx.mxGetInt64s_800,
+                    "getcdata": _libmx.mxGetComplexInt64s_800,
+                    "type": np.int64,
+                    "ctype": np.dtype([("real", np.int64), ("imag", np.int64)]),
+                },
+                9: {
+                    "istype": _libmx.mxIsUint64_800,
+                    "getdata": _libmx.mxGetUint64s_800,
+                    "getcdata": _libmx.mxGetComplexUint64s_800,
+                    "type": np.uint64,
+                    "ctype": np.dtype([("real", np.uint64), ("imag", np.uint64)]),
+                },
+            }
+
+            index = next(
+                (i for i in range(len(cfgs)) if cfgs[i]["istype"](self._pm)), len(cfgs)
+            )
+            if index < len(cfgs):
+                cfg = cfgs[index]
+                pdata = (
+                    cfg["getcdata"](self._pm) if iscplx else cfg["getdata"](self._pm)
+                )
+                if sz == 1:
+                    if iscplx:
+                        if index == 0:
+                            return complex(pdata[0].real, pdata[0].imag)
+                        elif index == 1:
+                            return np.complex64(1j * pdata[0].imag) + np.float32(
+                                pdata[0].real
+                            )
+                        else:
+                            return {"real": pdata[0].real, "imag": pdata[0].imag}
+                    else:
+                        return pdata[0]
+                return to_nd_array(pdata, (cfg["ctype"] if iscplx else cfg["type"]))
+            else:
+                raise Exception("Unsupported data type")
+
+    def size(self):
+        return _libmx.mxGetNumberOfElements_800(self._pm)
+
+    def shape(self):
+        ndims = _libmx.mxGetNumberOfDimensions_800(self._pm)
+        dims = _libmx.mxGetDimensions_800(self._pm)
+        rval = ()
+        for i in range(ndims):
+            rval += (dims[i],)
+        return rval
+
+    def mtype(self):
+        if _libmx.mxGetClassID_800(self._pm) == 0:
+            return "class"
+        else:
+            return _libmx.mxGetClassName_800(self._pm).decode("utf-8")
+
+    def iscomplex(self):
+        return _libmx.mxIsComplex_800(self._pm)
+
+
+class matfile:
+    def __init__(self, path, mode="r"):
+        _load_libmat()
+        if not os.path.exists(path):
+            path = os.path.join(sys.path[0], path)
+        self._mfp = _libmat.matOpen_800(path.encode("utf-8"), mode.encode("utf-8"))
+        if not self._mfp:
+            raise InvalidMATFile()
+        self.path = path
+        self._mode = mode
+
+    def __del__(self):
+        if self._mfp:
+            _libmat.matClose_800(self._mfp)
+
+    def __copy__(self):
+        raise NoShallowCopy()
+
+    def __deepcopy__(self, memo):
+        return matfile(self.path, self._mode)
+
+    def __getitem__(self, key):
+        return self.getVariable(key)
+
+    def __setitem__(self, key, val):
+        self.putVariable(key, val)
+
+    def __delitem__(self, key):
+        return self.deleteVariable(key)
+
+    def __len__(self):
+        return len(self.getDir())
+
+    def getVariable(self, varname):  # Array from MAT-file
+        array = _libmat.matGetVariable_800(self._mfp, varname.encode("utf-8"))
+        if array:
+            return matlab_array(array)
+        else:
+            raise InvalidMATVariable()
+
+    def getVariableInfo(self, varname):  # Array header information only
+        array = _libmat.matGetVariableInfo_800(self._mfp, varname.encode("utf-8"))
+        if array:
+            return matlab_array(array, True)
+        else:
+            raise InvalidMATVariable()
+
+    def getNextVariable(self):  # Next array in MAT-file
+        varname = POINTER(c_char)()
+        array = _libmat.matGetNextVariable_800(self._mfp, byref(varname))
+        if array:
+            return (cast(varname, c_char_p).value.decode("utf-8"), matlab_array(array))
+        else:
+            return ()
+
+    def getNextVariableInfo(self):  # Array header information only
+        varname = POINTER(c_char)()
+        array = _libmat.matGetNextVariableInfo_800(self._mfp, byref(varname))
+        if array:
+            return (
+                cast(varname, c_char_p).value.decode("utf-8"),
+                matlab_array(array, True),
+            )
+        else:
+            return ()
+
+    def putVariable(self, varname, vardata):  # Array to MAT-file
+        return _libmat.matPutVariable_800(
+            self._mfp, varname.encode("utf-8"), vardata._pm
+        )
+
+    # Array to MAT-file as originating from global workspace
+    def putVariableAsGlobal(self, varname, vardata):
+        return _libmat.matPutVariableAsGlobal_800(
+            self._mfp, varname.encode("utf-8"), vardata._pm
+        )
+
+    def deleteVariable(self, varname):  # Delete array from MAT-file
+        return _libmat.matDeleteVariable_800(self._mfp, varname.encode("utf-8"))
+
+    def getDir(self):  # List of variables in MAT-file
+        numvars = c_int()
+        pvarnames = _libmat.matGetDir_800(self._mfp, byref(numvars))
+        varlist = []
+        for i in range(numvars.value):
+            varlist.append(pvarnames[i].decode("utf-8"))
+        _libmx.mxFree_800(pvarnames)
+        return varlist
+
+    def getErrno(self):  # Error codes for MAT-file API
+        return _libmat.matGetErrno_800(self._mfp)
+
 
 # C API loading & registering arguments
 def _load_libmat():
@@ -423,240 +805,3 @@ def _load_libmx():
     _libmx.mxGetComplexInt64s_800.argtypes = [mxArray_p]
     _libmx.mxGetComplexUint64s_800.restype = POINTER(ComplexU64)
     _libmx.mxGetComplexUint64s_800.argtypes = [mxArray_p]
-
-
-class libMATException(Exception):
-    pass
-
-
-class InvalidMATFile(libMATException):
-    def __init__(self, *args):
-        if len(args):
-            super().__init__(self, *args)
-        else:
-            super().__init__(self, "Specified file is not a valid Matlab MAT file.")
-
-
-class InvalidMATVariable(libMATException):
-    def __init__(self, *args):
-        if len(args):
-            super().__init__(self, *args)
-        else:
-            super().__init__(self, "Specified variable is not found in this  Matlab MAT file.")
-
-
-class NoShallowCopy(libMATException):
-    def __init__(self, *args):
-        if len(args):
-            super().__init__(self, *args)
-        else:
-            super().__init__(self, "Shallow copy is not allowed. Always use deep copy.")
-
-
-class InfoOnlyArray(libMATException):
-    def __init__(self, *args):
-        if len(args):
-            super().__init__(self, *args)
-        else:
-            super().__init__(self, "This matlab_array object does not contain data.")
-
-
-def make_nd_array(c_pointer, size, shape, dtype, order='C'):
-    arr_size = size * np.dtype(dtype).itemsize
-    buf_from_mem = pythonapi.PyMemoryView_FromMemory
-    buf_from_mem.restype = py_object
-    buf_from_mem.argtypes = (c_void_p, c_int, c_int)
-    buffer = buf_from_mem(c_pointer, arr_size, 0x100)
-    arr = np.ndarray(shape, dtype, buffer, order=order)
-    return arr
-
-
-class matlab_array:
-    def __init__(self, mxSrc, infoonly=False, destroy=True):
-        self._pm = mxSrc
-        self._infoonly = infoonly
-        self._destroy = destroy
-
-    def __del__(self):
-        if self._destroy:
-            _libmx.mxDestroyArray_800(self._pm)
-
-    def __bool__(self):
-        return not _libmx.mxIsEmpty_800(self._pm) or (_libmx.mxIsLogicalScalar_800(self._pm) and not _libmx.mxIsLogicalScalarTrue_800(self._pm))
-
-    def __copy__(self):
-        raise NoShallowCopy()
-
-    def __deepcopy__(self, memo):
-        return matlab_array(_libmx.mxDuplicateArray_800(self._pm), self._infoonly)
-
-    def data(self):
-        if self._infoonly:
-            raise InfoOnlyArray()
-
-        sz = self.size()
-        dims = self.shape()
-
-        def to_nd_array(c_pointer, dtype): return make_nd_array(
-            c_pointer, sz, dims, dtype)
-
-        if _libmx.mxIsChar_800(self._pm):
-            if sz == 0:
-                return ''
-            elif len(dims) == 2 and dims[0] == 1:  # single string
-                return cast(_libmx.mxGetChars_800(self._pm), POINTER(c_wchar * sz)).contents.value
-            else:  # array of characters
-                return to_nd_array(_libmx.mxGetChars_800(self._pm), np.char.string_)
-        elif _libmx.mxIsStruct_800(self._pm):
-            nfields = _libmx.mxGetNumberOfFields_800(self._pm)
-            if sz == 0:  # create empty dictionary
-                return dict()
-            elif sz == 1:  # create dictionary
-                return dict([(_libmx.mxGetFieldNameByNumber_800(self._pm, i).decode('utf-8'), matlab_array(_libmx.mxGetFieldByNumber_800(self._pm, 0, i), False, False)) for i in range(nfields)])
-            else:
-                return np.fromfunction(lambda i:  matlab_array(_libmx.mxGetFieldByNumber_800(self._pm, 0, i), False, False), (sz,),
-                                       dtype=[(_libmx.mxGetFieldNameByNumber_800(self._pm, i).decode('utf-8'), matlab_array) for i in range(nfields)]).reshape(dims)
-        elif _libmx.mxIsEmpty_800(self._pm):
-            return None
-        elif _libmx.mxIsCell_800(self._pm):  # create ndarray of matlab_arrays
-            if sz == 1:
-                return matlab_array(_libmx.mxGetCell_800(self._pm, 0), False, False)
-            else:
-                return np.fromfunction(lambda i: matlab_array(_libmx.mxGetCell_800(self._pm, i), False, False), (sz,),
-                                       dtype=matlab_array).reshape(dims)
-        elif _libmx.mxIsLogical_800(self._pm):
-            if sz == 1:
-                return _libmx.mxIsLogicalScalarTrue_800(self._pm).value
-            else:
-                return to_nd_array(_libmx.mxGetLogicals_800(self._pm), np.bool)
-        else:  # numeric
-            iscplx = _libmx.mxIsComplex_800(self._pm)
-
-            cfgs = {0: {'istype': _libmx.mxIsDouble_800, 'getdata': _libmx.mxGetDoubles_800, 'getcdata': _libmx.mxGetComplexDoubles_800, 'type': np.float64, 'ctype': np.complex128},
-                    1: {'istype': _libmx.mxIsSingle_800, 'getdata': _libmx.mxGetSingles_800, 'getcdata': _libmx.mxGetComplexSingles_800, 'type': np.float32, 'ctype': np.complex64},
-                    2: {'istype': _libmx.mxIsInt8_800, 'getdata': _libmx.mxGetInt8s_800, 'getcdata': _libmx.mxGetComplexInt8s_800, 'type': np.int8, 'ctype': np.dtype([('real', np.int8), ('imag', np.int8)])},
-                    3: {'istype': _libmx.mxIsUint8_800, 'getdata': _libmx.mxGetUint8s_800, 'getcdata': _libmx.mxGetComplexUint8s_800, 'type': np.uint8, 'ctype': np.dtype([('real', np.uint8), ('imag', np.uint8)])},
-                    4: {'istype': _libmx.mxIsInt16_800, 'getdata': _libmx.mxGetInt16s_800, 'getcdata': _libmx.mxGetComplexInt16s_800, 'type': np.int16, 'ctype': np.dtype([('real', np.int16), ('imag', np.int16)])},
-                    5: {'istype': _libmx.mxIsUint16_800, 'getdata': _libmx.mxGetUint16s_800, 'getcdata': _libmx.mxGetComplexUint16s_800, 'type': np.uint16, 'ctype': np.dtype([('real', np.uint16), ('imag', np.uint16)])},
-                    6: {'istype': _libmx.mxIsInt32_800, 'getdata': _libmx.mxGetInt32s_800, 'getcdata': _libmx.mxGetComplexInt32s_800, 'type': np.int32, 'ctype': np.dtype([('real', np.int32), ('imag', np.int32)])},
-                    7: {'istype': _libmx.mxIsUint32_800, 'getdata': _libmx.mxGetUint32s_800, 'getcdata': _libmx.mxGetComplexUint32s_800, 'type': np.uint32, 'ctype': np.dtype([('real', np.uint32), ('imag', np.uint32)])},
-                    8: {'istype': _libmx.mxIsInt64_800, 'getdata': _libmx.mxGetInt64s_800, 'getcdata': _libmx.mxGetComplexInt64s_800, 'type': np.int64, 'ctype': np.dtype([('real', np.int64), ('imag', np.int64)])},
-                    9: {'istype': _libmx.mxIsUint64_800, 'getdata': _libmx.mxGetUint64s_800, 'getcdata': _libmx.mxGetComplexUint64s_800, 'type': np.uint64, 'ctype': np.dtype([('real', np.uint64), ('imag', np.uint64)])},
-                    }
-
-            index = next((i for i in range(len(cfgs))
-                          if cfgs[i]['istype'](self._pm)), len(cfgs))
-            if index < len(cfgs):
-                cfg = cfgs[index]
-                pdata = (cfg['getcdata'](self._pm)
-                         if iscplx else cfg['getdata'](self._pm))
-                if sz == 1:
-                    return pdata[0]
-                return to_nd_array(pdata, (cfg['ctype'] if iscplx else cfg['type']))
-            else:
-                raise Exception("Unsupported data type")
-
-    def size(self):
-        return _libmx.mxGetNumberOfElements_800(self._pm)
-
-    def shape(self):
-        ndims = _libmx.mxGetNumberOfDimensions_800(self._pm)
-        dims = _libmx.mxGetDimensions_800(self._pm)
-        rval = ()
-        for i in range(ndims):
-            rval += (dims[i],)
-        return rval
-
-    def mtype(self):
-        if _libmx.mxGetClassID_800(self._pm) == 0:
-            return 'class'
-        else:
-            return _libmx.mxGetClassName_800(self._pm).decode('utf-8')
-
-
-class matfile:
-
-    def __init__(self, path, mode='r'):
-        if not os.path.exists(path):
-            path = os.path.join(sys.path[0],path)
-        self._mfp = _libmat.matOpen_800(
-            path.encode('utf-8'), mode.encode('utf-8'))
-        if not self._mfp:
-            raise InvalidMATFile()
-        self.path = path
-        self._mode = mode
-
-    def __del__(self):
-        if self._mfp:
-            _libmat.matClose_800(self._mfp)
-
-    def __copy__(self):
-        raise NoShallowCopy()
-
-    def __deepcopy__(self, memo):
-        return matfile(self.path, self._mode)
-
-    def __getitem__(self, key):
-        return self.getVariable(key)
-
-    def __setitem__(self, key, val):
-        self.setVariable(key, val)
-
-    def __delitem__(self, key):
-        return self.deleteVariable(key)
-    
-    def __len__(self):
-        return len(self.getDir())
-
-    def getVariable(self, varname):  # Array from MAT-file
-        array = _libmat.matGetVariable_800(self._mfp, varname.encode('utf-8'))
-        if array:
-            return matlab_array(array)
-        else:
-            raise InvalidMATVariable()
-
-    def getVariableInfo(self, varname):  # Array header information only
-        array = _libmat.matGetVariableInfo_800(
-            self._mfp, varname.encode('utf-8'))
-        if array:
-            return matlab_array(array, True)
-        else:
-            raise InvalidMATVariable()
-
-    def getNextVariable(self):  # Next array in MAT-file
-        varname = POINTER(c_char)()
-        array = _libmat.matGetNextVariable_800(self._mfp, byref(varname))
-        if array:
-            return (cast(varname, c_char_p).value.decode('utf-8'), matlab_array(array))
-        else:
-            return ()
-
-    def getNextVariableInfo(self):  # Array header information only
-        varname = POINTER(c_char)()
-        array = _libmat.matGetNextVariableInfo_800(self._mfp, byref(varname))
-        if array:
-            return (cast(varname, c_char_p).value.decode('utf-8'), matlab_array(array, True))
-        else:
-            return ()
-
-    def putVariable(self, varname, vardata):  # Array to MAT-file
-        return _libmat.matPutVariable_800(self._mfp, varname.encode('utf-8'), vardata._pm)
-
-    # Array to MAT-file as originating from global workspace
-    def putVariableAsGlobal(self, varname, vardata):
-        return _libmat.matPutVariableAsGlobal_800(self._mfp, varname.encode('utf-8'), vardata._pm)
-
-    def deleteVariable(self, varname):  # Delete array from MAT-file
-        return _libmat.matDeleteVariable_800(self._mfp, varname.encode('utf-8'))
-
-    def getDir(self):  # List of variables in MAT-file
-        numvars = c_int()
-        pvarnames = _libmat.matGetDir_800(self._mfp, byref(numvars))
-        varlist = []
-        for i in range(numvars.value):
-            varlist.append(pvarnames[i].decode("utf-8"))
-        _libmx.mxFree_800(pvarnames)
-        return varlist
-
-    def getErrno(self):  # Error codes for MAT-file API
-        return _libmat.matGetErrno_800(self._mfp)
