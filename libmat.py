@@ -7,6 +7,9 @@ import os
 import sys
 
 
+# to hold ctypes.cdll objects
+_libmat = None
+_libmx = None
 class MATFile(Structure):  # C API opaque objects
     pass
 
@@ -19,264 +22,6 @@ class mxArray(Structure):
 
 
 mxArray_p = POINTER(mxArray)
-
-libexts = {'Linux': '.so',
-           'Darwin': '.dylib',
-           'Windows': '.dll'}
-libext = libexts[platform.system()]
-
-# C API loading & registering arguments
-_libmat = cdll.LoadLibrary('libmat'+libext)
-_libmat.matOpen_800.restype = MATFile_p
-_libmat.matOpen_800.argtypes = [POINTER(c_char), POINTER(c_char)]
-_libmat.matClose_800.restype = c_int
-_libmat.matClose_800.argtypes = [MATFile_p]
-_libmat.matGetVariable_800.restype = mxArray_p
-_libmat.matGetVariable_800.argtypes = [MATFile_p, POINTER(c_char)]
-_libmat.matGetVariableInfo_800.restype = mxArray_p
-_libmat.matGetVariableInfo_800.argtypes = [MATFile_p, POINTER(c_char)]
-_libmat.matGetNextVariable_800.restype = mxArray_p
-_libmat.matGetNextVariable_800.argtypes = [MATFile_p, POINTER(POINTER(c_char))]
-_libmat.matGetNextVariableInfo_800.restype = mxArray_p
-_libmat.matGetNextVariableInfo_800.argtypes = [
-    MATFile_p, POINTER(POINTER(c_char))]
-_libmat.matPutVariable_800.restype = c_int
-_libmat.matPutVariable_800.argtypes = [MATFile_p, POINTER(c_char), mxArray_p]
-_libmat.matPutVariableAsGlobal_800.restype = c_int
-_libmat.matPutVariableAsGlobal_800.argtypes = [
-    MATFile_p, POINTER(c_char), mxArray_p]
-_libmat.matDeleteVariable_800.restype = c_int
-_libmat.matDeleteVariable_800.argtypes = [MATFile_p, POINTER(c_char)]
-_libmat.matGetDir_800.restype = POINTER(c_char_p)
-_libmat.matGetDir_800.argtypes = [MATFile_p, POINTER(c_int)]
-_libmat.matGetFp_800.restype = c_void_p
-_libmat.matGetFp_800.argtypes = [MATFile_p]
-_libmat.matGetErrno_800.restype = c_int
-_libmat.matGetErrno_800.argtypes = [MATFile_p]
-
-# C API for matrix operations
-_libmx = cdll.LoadLibrary('libmx'+libext)
-_libmx.mxMalloc_800.restype = c_void_p
-_libmx.mxMalloc_800.argtypes = [c_size_t]
-_libmx.mxCalloc_800.restype = c_void_p
-_libmx.mxCalloc_800.argtypes = [c_size_t, c_size_t]
-_libmx.mxFree_800.argtypes = [c_void_p]
-_libmx.mxRealloc_800.restype = c_void_p
-_libmx.mxRealloc_800.argtypes = [c_void_p, c_size_t]
-_libmx.mxGetNumberOfDimensions_800.restype = c_size_t
-_libmx.mxGetNumberOfDimensions_800.argtypes = [mxArray_p]
-_libmx.mxGetDimensions_800.restype = POINTER(c_size_t)
-_libmx.mxGetDimensions_800.argtypes = [mxArray_p]
-_libmx.mxGetM_800.restype = c_size_t
-_libmx.mxGetM_800.argtypes = [mxArray_p]
-_libmx.mxGetIr_800.restype = POINTER(c_size_t)
-_libmx.mxGetIr_800.argtypes = [mxArray_p]
-_libmx.mxGetJc_800.restype = POINTER(c_size_t)
-_libmx.mxGetJc_800.argtypes = [mxArray_p]
-_libmx.mxGetNzmax_800.restype = c_size_t
-_libmx.mxGetNzmax_800.argtypes = [mxArray_p]
-_libmx.mxSetNzmax_800.argtypes = [mxArray_p, c_size_t]
-_libmx.mxGetFieldNameByNumber_800.restype = c_char_p
-_libmx.mxGetFieldNameByNumber_800.argtypes = [mxArray_p, c_int]
-_libmx.mxGetFieldByNumber_800.restype = mxArray_p
-_libmx.mxGetFieldByNumber_800.argtypes = [mxArray_p, c_size_t, c_int]
-_libmx.mxGetCell_800.restype = mxArray_p
-_libmx.mxGetCell_800.argtypes = [mxArray_p, c_size_t]
-_libmx.mxGetClassID_800.restype = c_int
-_libmx.mxGetClassID_800.argtypes = [mxArray_p]
-_libmx.mxGetData_800.restype = c_void_p
-_libmx.mxGetData_800.argtypes = [mxArray_p]
-_libmx.mxSetData_800.argtypes = [mxArray_p, c_void_p]
-_libmx.mxIsNumeric_800.restype = c_bool
-_libmx.mxIsNumeric_800.argtypes = [mxArray_p]
-_libmx.mxIsCell_800.restype = c_bool
-_libmx.mxIsCell_800.argtypes = [mxArray_p]
-_libmx.mxIsLogical_800.restype = c_bool
-_libmx.mxIsLogical_800.argtypes = [mxArray_p]
-_libmx.mxIsScalar_800.restype = c_bool
-_libmx.mxIsScalar_800.argtypes = [mxArray_p]
-_libmx.mxIsChar_800.restype = c_bool
-_libmx.mxIsChar_800.argtypes = [mxArray_p]
-_libmx.mxIsStruct_800.restype = c_bool
-_libmx.mxIsStruct_800.argtypes = [mxArray_p]
-_libmx.mxIsOpaque_800.restype = c_bool
-_libmx.mxIsOpaque_800.argtypes = [mxArray_p]
-_libmx.mxIsFunctionHandle_800.restype = c_bool
-_libmx.mxIsFunctionHandle_800.argtypes = [mxArray_p]
-# c_void_p mxGetImagData(mxArray_p)
-# void mxSetImagData(mxArray_p, c_void_p)
-_libmx.mxIsComplex_800.restype = c_bool
-_libmx.mxIsComplex_800.argtypes = [mxArray_p]
-_libmx.mxIsSparse_800.restype = c_bool
-_libmx.mxIsSparse_800.argtypes = [mxArray_p]
-_libmx.mxIsDouble_800.restype = c_bool
-_libmx.mxIsDouble_800.argtypes = [mxArray_p]
-_libmx.mxIsSingle_800.restype = c_bool
-_libmx.mxIsSingle_800.argtypes = [mxArray_p]
-_libmx.mxIsInt8_800.restype = c_bool
-_libmx.mxIsInt8_800.argtypes = [mxArray_p]
-_libmx.mxIsUint8_800.restype = c_bool
-_libmx.mxIsUint8_800.argtypes = [mxArray_p]
-_libmx.mxIsInt16_800.restype = c_bool
-_libmx.mxIsInt16_800.argtypes = [mxArray_p]
-_libmx.mxIsUint16_800.restype = c_bool
-_libmx.mxIsUint16_800.argtypes = [mxArray_p]
-_libmx.mxIsInt32_800.restype = c_bool
-_libmx.mxIsInt32_800.argtypes = [mxArray_p]
-_libmx.mxIsUint32_800.restype = c_bool
-_libmx.mxIsUint32_800.argtypes = [mxArray_p]
-_libmx.mxIsInt64_800.restype = c_bool
-_libmx.mxIsInt64_800.argtypes = [mxArray_p]
-_libmx.mxIsUint64_800.restype = c_bool
-_libmx.mxIsUint64_800.argtypes = [mxArray_p]
-_libmx.mxGetNumberOfElements_800.restype = c_size_t
-_libmx.mxGetNumberOfElements_800.argtypes = [mxArray_p]
-# POINTER(c_double) mxGetPi(mxArray_p);
-# void mxSetPi(mxArray_p, POINTER(c_double) );
-_libmx.mxGetChars_800.restype = POINTER(c_wchar)
-_libmx.mxGetChars_800.argtypes = [mxArray_p]
-_libmx.mxGetUserBits_800.restype = c_int
-_libmx.mxGetUserBits_800.argtypes = [mxArray_p]
-_libmx.mxSetUserBits_800.argtypes = [mxArray_p, c_int]
-_libmx.mxGetScalar_800.restype = c_double
-_libmx.mxGetScalar_800.argtypes = [mxArray_p]
-_libmx.mxIsFromGlobalWS_800.restype = c_bool
-_libmx.mxIsFromGlobalWS_800.argtypes = [mxArray_p]
-_libmx.mxSetFromGlobalWS_800.argtypes = [mxArray_p, c_bool]
-_libmx.mxSetM_800.argtypes = [mxArray_p, c_size_t]
-_libmx.mxGetN_800.restype = c_size_t
-_libmx.mxGetN_800.argtypes = [mxArray_p]
-_libmx.mxIsEmpty_800.restype = c_bool
-_libmx.mxIsEmpty_800.argtypes = [mxArray_p]
-_libmx.mxGetFieldNumber_800.restype = c_int
-_libmx.mxGetFieldNumber_800.argtypes = [mxArray_p, c_char_p]
-_libmx.mxSetIr_800.argtypes = [mxArray_p, POINTER(c_size_t)]
-_libmx.mxSetJc_800.argtypes = [mxArray_p, POINTER(c_size_t)]
-_libmx.mxGetData_800.restype = c_void_p
-_libmx.mxGetData_800.argtypes = [mxArray_p]
-_libmx.mxSetData_800.argtypes = [mxArray_p, c_void_p]
-_libmx.mxGetPr_800.restype = POINTER(c_double)
-_libmx.mxGetPr_800.argtypes = [mxArray_p]
-_libmx.mxSetPr_800.argtypes = [mxArray_p, POINTER(c_double)]
-_libmx.mxGetElementSize_800.restype = c_size_t
-_libmx.mxGetElementSize_800.argtypes = [mxArray_p]
-_libmx.mxCalcSingleSubscript_800.restype = c_size_t
-_libmx.mxCalcSingleSubscript_800.argtypes = [
-    mxArray_p, c_size_t, POINTER(c_size_t)]
-_libmx.mxGetNumberOfFields_800.restype = c_int
-_libmx.mxGetNumberOfFields_800.argtypes = [mxArray_p]
-_libmx.mxSetCell_800.argtypes = [mxArray_p, c_size_t, mxArray_p]
-_libmx.mxSetFieldByNumber_800.argtypes = [
-    mxArray_p, c_size_t, c_int, mxArray_p]
-_libmx.mxGetField_800.restype = mxArray_p
-_libmx.mxGetField_800.argtypes = [mxArray_p, c_size_t, c_char_p]
-_libmx.mxSetField_800.argtypes = [mxArray_p, c_size_t, c_char_p, mxArray_p]
-_libmx.mxGetProperty_800.restype = mxArray_p
-_libmx.mxGetProperty_800.argtypes = [mxArray_p, c_size_t, c_char_p]
-_libmx.mxSetProperty_800.argtypes = [mxArray_p, c_size_t, c_char_p, mxArray_p]
-_libmx.mxGetClassName_800.restype = c_char_p
-_libmx.mxGetClassName_800.argtypes = [mxArray_p]
-_libmx.mxIsClass_800.restype = c_bool
-_libmx.mxIsClass_800.argtypes = [mxArray_p, c_char_p]
-_libmx.mxCreateNumericMatrix_800.restype = mxArray_p
-_libmx.mxCreateNumericMatrix_800.argtypes = [c_size_t, c_size_t, c_int, c_int]
-_libmx.mxCreateUninitNumericMatrix_800.restype = mxArray_p
-_libmx.mxCreateUninitNumericMatrix_800.argtypes = [
-    c_size_t, c_size_t, c_int, c_int]
-_libmx.mxCreateUninitNumericArray_800.restype = mxArray_p
-_libmx.mxCreateUninitNumericArray_800.argtypes = [
-    c_size_t, POINTER(c_size_t), c_int, c_int]
-_libmx.mxSetN_800.argtypes = [mxArray_p, c_size_t]
-_libmx.mxSetDimensions_800.restype = c_int
-_libmx.mxSetDimensions_800.argtypes = [mxArray_p, POINTER(c_size_t), c_size_t]
-_libmx.mxDestroyArray_800.argtypes = [mxArray_p]
-_libmx.mxCreateNumericArray_800.restype = mxArray_p
-_libmx.mxCreateNumericArray_800.argtypes = [
-    c_size_t, POINTER(c_size_t), c_int, c_int]
-_libmx.mxCreateCharArray_800.restype = mxArray_p
-_libmx.mxCreateCharArray_800.argtypes = [c_size_t, POINTER(c_size_t)]
-_libmx.mxCreateDoubleMatrix_800.restype = mxArray_p
-_libmx.mxCreateDoubleMatrix_800.argtypes = [c_size_t, c_size_t, c_int]
-_libmx.mxGetLogicals_800.restype = POINTER(c_bool)
-_libmx.mxGetLogicals_800.argtypes = [mxArray_p]
-_libmx.mxCreateLogicalArray_800.restype = mxArray_p
-_libmx.mxCreateLogicalArray_800.argtypes = [c_size_t, POINTER(c_size_t)]
-_libmx.mxCreateLogicalMatrix_800.restype = mxArray_p
-_libmx.mxCreateLogicalMatrix_800.argtypes = [c_size_t, c_size_t]
-_libmx.mxCreateLogicalScalar_800.restype = mxArray_p
-_libmx.mxCreateLogicalScalar_800.argtypes = [c_bool]
-_libmx.mxIsLogicalScalar_800.restype = c_bool
-_libmx.mxIsLogicalScalar_800.argtypes = [mxArray_p]
-_libmx.mxIsLogicalScalarTrue_800.restype = c_bool
-_libmx.mxIsLogicalScalarTrue_800.argtypes = [mxArray_p]
-_libmx.mxCreateDoubleScalar_800.restype = mxArray_p
-_libmx.mxCreateDoubleScalar_800.argtypes = [c_double]
-_libmx.mxCreateSparse_800.restype = mxArray_p
-_libmx.mxCreateSparse_800.argtypes = [c_size_t, c_size_t, c_size_t, c_int]
-_libmx.mxCreateSparseLogicalMatrix_800.restype = mxArray_p
-_libmx.mxCreateSparseLogicalMatrix_800.argtypes = [
-    c_size_t, c_size_t, c_size_t]
-_libmx.mxGetNChars_800.argtypes = [mxArray_p, c_char_p, c_size_t]
-_libmx.mxGetString_800.restype = c_int
-_libmx.mxGetString_800.argtypes = [mxArray_p, c_char_p, c_size_t]
-_libmx.mxArrayToString_800.restype = c_char_p
-_libmx.mxArrayToString_800.argtypes = [mxArray_p]
-_libmx.mxArrayToUTF8String_800.restype = c_char_p
-_libmx.mxArrayToUTF8String_800.argtypes = [mxArray_p]
-_libmx.mxCreateStringFromNChars_800.restype = mxArray_p
-_libmx.mxCreateStringFromNChars_800.argtypes = [c_char_p, c_size_t]
-_libmx.mxCreateString_800.restype = mxArray_p
-_libmx.mxCreateString_800.argtypes = [c_char_p]
-_libmx.mxCreateCharMatrixFromStrings_800.restype = mxArray_p
-_libmx.mxCreateCharMatrixFromStrings_800.argtypes = [
-    c_size_t, POINTER(c_char_p)]
-_libmx.mxCreateCellMatrix_800.restype = mxArray_p
-_libmx.mxCreateCellMatrix_800.argtypes = [c_size_t, c_size_t]
-_libmx.mxCreateCellArray_800.restype = mxArray_p
-_libmx.mxCreateCellArray_800.argtypes = [c_size_t, POINTER(c_size_t)]
-_libmx.mxCreateStructMatrix_800.restype = mxArray_p
-_libmx.mxCreateStructMatrix_800.argtypes = [
-    c_size_t, c_size_t, c_int, POINTER(c_char_p)]
-_libmx.mxCreateStructArray_800.restype = mxArray_p
-_libmx.mxCreateStructArray_800.argtypes = [
-    c_size_t, POINTER(c_size_t), c_int, POINTER(c_char_p)]
-_libmx.mxDuplicateArray_800.restype = mxArray_p
-_libmx.mxDuplicateArray_800.argtypes = [mxArray_p]
-_libmx.mxSetClassName_800.restype = c_int
-_libmx.mxSetClassName_800.argtypes = [mxArray_p, c_char_p]
-_libmx.mxAddField_800.restype = c_int
-_libmx.mxAddField_800.argtypes = [mxArray_p, c_char_p]
-_libmx.mxRemoveField_800.argtypes = [mxArray_p, c_int]
-_libmx.mxGetEps_800.restype = c_double
-_libmx.mxGetInf_800.restype = c_double
-_libmx.mxGetNaN_800.restype = c_double
-_libmx.mxIsFinite_800.restype = c_bool
-_libmx.mxIsFinite_800.argtypes = [c_double]
-_libmx.mxIsInf_800.restype = c_bool
-_libmx.mxIsInf_800.argtypes = [c_double]
-_libmx.mxIsNaN_800.restype = c_bool
-_libmx.mxIsNaN_800.argtypes = [c_double]
-
-_libmx.mxGetDoubles_800.restype = POINTER(c_double)
-_libmx.mxGetDoubles_800.argtypes = [mxArray_p]
-_libmx.mxGetSingles_800.restype = POINTER(c_float)
-_libmx.mxGetSingles_800.argtypes = [mxArray_p]
-_libmx.mxGetInt8s_800.restype = POINTER(c_int8)
-_libmx.mxGetInt8s_800.argtypes = [mxArray_p]
-_libmx.mxGetUint8s_800.restype = POINTER(c_uint8)
-_libmx.mxGetUint8s_800.argtypes = [mxArray_p]
-_libmx.mxGetInt16s_800.restype = POINTER(c_int16)
-_libmx.mxGetInt16s_800.argtypes = [mxArray_p]
-_libmx.mxGetUint16s_800.restype = POINTER(c_uint16)
-_libmx.mxGetUint16s_800.argtypes = [mxArray_p]
-_libmx.mxGetInt32s_800.restype = POINTER(c_int32)
-_libmx.mxGetInt32s_800.argtypes = [mxArray_p]
-_libmx.mxGetUint32s_800.restype = POINTER(c_uint32)
-_libmx.mxGetUint32s_800.argtypes = [mxArray_p]
-_libmx.mxGetInt64s_800.restype = POINTER(c_int64)
-_libmx.mxGetInt64s_800.argtypes = [mxArray_p]
-_libmx.mxGetUint64s_800.restype = POINTER(c_uint64)
-_libmx.mxGetUint64s_800.argtypes = [mxArray_p]
 
 
 class Complex64(Structure):
@@ -318,27 +63,308 @@ class ComplexI64(Structure):
 class ComplexU64(Structure):
     _fields_ = [("real", c_uint64), ("imag", c_uint64)]
 
+libexts = {'Linux': '.so',
+           'Darwin': '.dylib',
+           'Windows': '.dll'}
+libext = libexts[platform.system()]
 
-_libmx.mxGetComplexDoubles_800.restype = POINTER(Complex64)
-_libmx.mxGetComplexDoubles_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexSingles_800.restype = POINTER(Complex32)
-_libmx.mxGetComplexSingles_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexInt8s_800.restype = POINTER(ComplexI8)
-_libmx.mxGetComplexInt8s_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexUint8s_800.restype = POINTER(ComplexU8)
-_libmx.mxGetComplexUint8s_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexInt16s_800.restype = POINTER(ComplexI16)
-_libmx.mxGetComplexInt16s_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexUint16s_800.restype = POINTER(ComplexU16)
-_libmx.mxGetComplexUint16s_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexInt32s_800.restype = POINTER(ComplexI32)
-_libmx.mxGetComplexInt32s_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexUint32s_800.restype = POINTER(ComplexU32)
-_libmx.mxGetComplexUint32s_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexInt64s_800.restype = POINTER(ComplexI64)
-_libmx.mxGetComplexInt64s_800.argtypes = [mxArray_p]
-_libmx.mxGetComplexUint64s_800.restype = POINTER(ComplexU64)
-_libmx.mxGetComplexUint64s_800.argtypes = [mxArray_p]
+# C API loading & registering arguments
+def _load_libmat():
+    global _libmat
+    if _libmat:
+        return
+    _libmat = cdll.LoadLibrary("libmat" + libext)
+    _libmat.matOpen_800.restype = MATFile_p
+    _libmat.matOpen_800.argtypes = [POINTER(c_char), POINTER(c_char)]
+    _libmat.matClose_800.restype = c_int
+    _libmat.matClose_800.argtypes = [MATFile_p]
+    _libmat.matGetVariable_800.restype = mxArray_p
+    _libmat.matGetVariable_800.argtypes = [MATFile_p, POINTER(c_char)]
+    _libmat.matGetVariableInfo_800.restype = mxArray_p
+    _libmat.matGetVariableInfo_800.argtypes = [MATFile_p, POINTER(c_char)]
+    _libmat.matGetNextVariable_800.restype = mxArray_p
+    _libmat.matGetNextVariable_800.argtypes = [MATFile_p, POINTER(POINTER(c_char))]
+    _libmat.matGetNextVariableInfo_800.restype = mxArray_p
+    _libmat.matGetNextVariableInfo_800.argtypes = [MATFile_p, POINTER(POINTER(c_char))]
+    _libmat.matPutVariable_800.restype = c_int
+    _libmat.matPutVariable_800.argtypes = [MATFile_p, POINTER(c_char), mxArray_p]
+    _libmat.matPutVariableAsGlobal_800.restype = c_int
+    _libmat.matPutVariableAsGlobal_800.argtypes = [
+        MATFile_p,
+        POINTER(c_char),
+        mxArray_p,
+    ]
+    _libmat.matDeleteVariable_800.restype = c_int
+    _libmat.matDeleteVariable_800.argtypes = [MATFile_p, POINTER(c_char)]
+    _libmat.matGetDir_800.restype = POINTER(c_char_p)
+    _libmat.matGetDir_800.argtypes = [MATFile_p, POINTER(c_int)]
+    _libmat.matGetFp_800.restype = c_void_p
+    _libmat.matGetFp_800.argtypes = [MATFile_p]
+    _libmat.matGetErrno_800.restype = c_int
+    _libmat.matGetErrno_800.argtypes = [MATFile_p]
+
+    _load_libmx()  # also load matrix library
+
+
+# C API for matrix operations
+def _load_libmx():
+    global _libmx
+    if _libmx:
+        return
+    _libmx = cdll.LoadLibrary("libmx" + libext)
+    _libmx.mxMalloc_800.restype = c_void_p
+    _libmx.mxMalloc_800.argtypes = [c_size_t]
+    _libmx.mxCalloc_800.restype = c_void_p
+    _libmx.mxCalloc_800.argtypes = [c_size_t, c_size_t]
+    _libmx.mxFree_800.argtypes = [c_void_p]
+    _libmx.mxRealloc_800.restype = c_void_p
+    _libmx.mxRealloc_800.argtypes = [c_void_p, c_size_t]
+    _libmx.mxGetNumberOfDimensions_800.restype = c_size_t
+    _libmx.mxGetNumberOfDimensions_800.argtypes = [mxArray_p]
+    _libmx.mxGetDimensions_800.restype = POINTER(c_size_t)
+    _libmx.mxGetDimensions_800.argtypes = [mxArray_p]
+    _libmx.mxGetM_800.restype = c_size_t
+    _libmx.mxGetM_800.argtypes = [mxArray_p]
+    _libmx.mxGetIr_800.restype = POINTER(c_size_t)
+    _libmx.mxGetIr_800.argtypes = [mxArray_p]
+    _libmx.mxGetJc_800.restype = POINTER(c_size_t)
+    _libmx.mxGetJc_800.argtypes = [mxArray_p]
+    _libmx.mxGetNzmax_800.restype = c_size_t
+    _libmx.mxGetNzmax_800.argtypes = [mxArray_p]
+    _libmx.mxSetNzmax_800.argtypes = [mxArray_p, c_size_t]
+    _libmx.mxGetFieldNameByNumber_800.restype = c_char_p
+    _libmx.mxGetFieldNameByNumber_800.argtypes = [mxArray_p, c_int]
+    _libmx.mxGetFieldByNumber_800.restype = mxArray_p
+    _libmx.mxGetFieldByNumber_800.argtypes = [mxArray_p, c_size_t, c_int]
+    _libmx.mxGetCell_800.restype = mxArray_p
+    _libmx.mxGetCell_800.argtypes = [mxArray_p, c_size_t]
+    _libmx.mxGetClassID_800.restype = c_int
+    _libmx.mxGetClassID_800.argtypes = [mxArray_p]
+    _libmx.mxGetData_800.restype = c_void_p
+    _libmx.mxGetData_800.argtypes = [mxArray_p]
+    _libmx.mxSetData_800.argtypes = [mxArray_p, c_void_p]
+    _libmx.mxIsNumeric_800.restype = c_bool
+    _libmx.mxIsNumeric_800.argtypes = [mxArray_p]
+    _libmx.mxIsCell_800.restype = c_bool
+    _libmx.mxIsCell_800.argtypes = [mxArray_p]
+    _libmx.mxIsLogical_800.restype = c_bool
+    _libmx.mxIsLogical_800.argtypes = [mxArray_p]
+    _libmx.mxIsScalar_800.restype = c_bool
+    _libmx.mxIsScalar_800.argtypes = [mxArray_p]
+    _libmx.mxIsChar_800.restype = c_bool
+    _libmx.mxIsChar_800.argtypes = [mxArray_p]
+    _libmx.mxIsStruct_800.restype = c_bool
+    _libmx.mxIsStruct_800.argtypes = [mxArray_p]
+    _libmx.mxIsOpaque_800.restype = c_bool
+    _libmx.mxIsOpaque_800.argtypes = [mxArray_p]
+    _libmx.mxIsFunctionHandle_800.restype = c_bool
+    _libmx.mxIsFunctionHandle_800.argtypes = [mxArray_p]
+    # c_void_p mxGetImagData(mxArray_p)
+    # void mxSetImagData(mxArray_p, c_void_p)
+    _libmx.mxIsComplex_800.restype = c_bool
+    _libmx.mxIsComplex_800.argtypes = [mxArray_p]
+    _libmx.mxIsSparse_800.restype = c_bool
+    _libmx.mxIsSparse_800.argtypes = [mxArray_p]
+    _libmx.mxIsDouble_800.restype = c_bool
+    _libmx.mxIsDouble_800.argtypes = [mxArray_p]
+    _libmx.mxIsSingle_800.restype = c_bool
+    _libmx.mxIsSingle_800.argtypes = [mxArray_p]
+    _libmx.mxIsInt8_800.restype = c_bool
+    _libmx.mxIsInt8_800.argtypes = [mxArray_p]
+    _libmx.mxIsUint8_800.restype = c_bool
+    _libmx.mxIsUint8_800.argtypes = [mxArray_p]
+    _libmx.mxIsInt16_800.restype = c_bool
+    _libmx.mxIsInt16_800.argtypes = [mxArray_p]
+    _libmx.mxIsUint16_800.restype = c_bool
+    _libmx.mxIsUint16_800.argtypes = [mxArray_p]
+    _libmx.mxIsInt32_800.restype = c_bool
+    _libmx.mxIsInt32_800.argtypes = [mxArray_p]
+    _libmx.mxIsUint32_800.restype = c_bool
+    _libmx.mxIsUint32_800.argtypes = [mxArray_p]
+    _libmx.mxIsInt64_800.restype = c_bool
+    _libmx.mxIsInt64_800.argtypes = [mxArray_p]
+    _libmx.mxIsUint64_800.restype = c_bool
+    _libmx.mxIsUint64_800.argtypes = [mxArray_p]
+    _libmx.mxGetNumberOfElements_800.restype = c_size_t
+    _libmx.mxGetNumberOfElements_800.argtypes = [mxArray_p]
+    # POINTER(c_double) mxGetPi(mxArray_p);
+    # void mxSetPi(mxArray_p, POINTER(c_double) );
+    _libmx.mxGetChars_800.restype = POINTER(c_wchar)
+    _libmx.mxGetChars_800.argtypes = [mxArray_p]
+    _libmx.mxGetUserBits_800.restype = c_int
+    _libmx.mxGetUserBits_800.argtypes = [mxArray_p]
+    _libmx.mxSetUserBits_800.argtypes = [mxArray_p, c_int]
+    _libmx.mxGetScalar_800.restype = c_double
+    _libmx.mxGetScalar_800.argtypes = [mxArray_p]
+    _libmx.mxIsFromGlobalWS_800.restype = c_bool
+    _libmx.mxIsFromGlobalWS_800.argtypes = [mxArray_p]
+    _libmx.mxSetFromGlobalWS_800.argtypes = [mxArray_p, c_bool]
+    _libmx.mxSetM_800.argtypes = [mxArray_p, c_size_t]
+    _libmx.mxGetN_800.restype = c_size_t
+    _libmx.mxGetN_800.argtypes = [mxArray_p]
+    _libmx.mxIsEmpty_800.restype = c_bool
+    _libmx.mxIsEmpty_800.argtypes = [mxArray_p]
+    _libmx.mxGetFieldNumber_800.restype = c_int
+    _libmx.mxGetFieldNumber_800.argtypes = [mxArray_p, c_char_p]
+    _libmx.mxSetIr_800.argtypes = [mxArray_p, POINTER(c_size_t)]
+    _libmx.mxSetJc_800.argtypes = [mxArray_p, POINTER(c_size_t)]
+    _libmx.mxGetData_800.restype = c_void_p
+    _libmx.mxGetData_800.argtypes = [mxArray_p]
+    _libmx.mxSetData_800.argtypes = [mxArray_p, c_void_p]
+    _libmx.mxGetPr_800.restype = POINTER(c_double)
+    _libmx.mxGetPr_800.argtypes = [mxArray_p]
+    _libmx.mxSetPr_800.argtypes = [mxArray_p, POINTER(c_double)]
+    _libmx.mxGetElementSize_800.restype = c_size_t
+    _libmx.mxGetElementSize_800.argtypes = [mxArray_p]
+    _libmx.mxCalcSingleSubscript_800.restype = c_size_t
+    _libmx.mxCalcSingleSubscript_800.argtypes = [mxArray_p, c_size_t, POINTER(c_size_t)]
+    _libmx.mxGetNumberOfFields_800.restype = c_int
+    _libmx.mxGetNumberOfFields_800.argtypes = [mxArray_p]
+    _libmx.mxSetCell_800.argtypes = [mxArray_p, c_size_t, mxArray_p]
+    _libmx.mxSetFieldByNumber_800.argtypes = [mxArray_p, c_size_t, c_int, mxArray_p]
+    _libmx.mxGetField_800.restype = mxArray_p
+    _libmx.mxGetField_800.argtypes = [mxArray_p, c_size_t, c_char_p]
+    _libmx.mxSetField_800.argtypes = [mxArray_p, c_size_t, c_char_p, mxArray_p]
+    _libmx.mxGetProperty_800.restype = mxArray_p
+    _libmx.mxGetProperty_800.argtypes = [mxArray_p, c_size_t, c_char_p]
+    _libmx.mxSetProperty_800.argtypes = [mxArray_p, c_size_t, c_char_p, mxArray_p]
+    _libmx.mxGetClassName_800.restype = c_char_p
+    _libmx.mxGetClassName_800.argtypes = [mxArray_p]
+    _libmx.mxIsClass_800.restype = c_bool
+    _libmx.mxIsClass_800.argtypes = [mxArray_p, c_char_p]
+    _libmx.mxCreateNumericMatrix_800.restype = mxArray_p
+    _libmx.mxCreateNumericMatrix_800.argtypes = [c_size_t, c_size_t, c_int, c_int]
+    _libmx.mxCreateUninitNumericMatrix_800.restype = mxArray_p
+    _libmx.mxCreateUninitNumericMatrix_800.argtypes = [c_size_t, c_size_t, c_int, c_int]
+    _libmx.mxCreateUninitNumericArray_800.restype = mxArray_p
+    _libmx.mxCreateUninitNumericArray_800.argtypes = [
+        c_size_t,
+        POINTER(c_size_t),
+        c_int,
+        c_int,
+    ]
+    _libmx.mxSetN_800.argtypes = [mxArray_p, c_size_t]
+    _libmx.mxSetDimensions_800.restype = c_int
+    _libmx.mxSetDimensions_800.argtypes = [mxArray_p, POINTER(c_size_t), c_size_t]
+    _libmx.mxDestroyArray_800.argtypes = [mxArray_p]
+    _libmx.mxCreateNumericArray_800.restype = mxArray_p
+    _libmx.mxCreateNumericArray_800.argtypes = [
+        c_size_t,
+        POINTER(c_size_t),
+        c_int,
+        c_int,
+    ]
+    _libmx.mxCreateCharArray_800.restype = mxArray_p
+    _libmx.mxCreateCharArray_800.argtypes = [c_size_t, POINTER(c_size_t)]
+    _libmx.mxCreateDoubleMatrix_800.restype = mxArray_p
+    _libmx.mxCreateDoubleMatrix_800.argtypes = [c_size_t, c_size_t, c_int]
+    _libmx.mxGetLogicals_800.restype = POINTER(c_bool)
+    _libmx.mxGetLogicals_800.argtypes = [mxArray_p]
+    _libmx.mxCreateLogicalArray_800.restype = mxArray_p
+    _libmx.mxCreateLogicalArray_800.argtypes = [c_size_t, POINTER(c_size_t)]
+    _libmx.mxCreateLogicalMatrix_800.restype = mxArray_p
+    _libmx.mxCreateLogicalMatrix_800.argtypes = [c_size_t, c_size_t]
+    _libmx.mxCreateLogicalScalar_800.restype = mxArray_p
+    _libmx.mxCreateLogicalScalar_800.argtypes = [c_bool]
+    _libmx.mxIsLogicalScalar_800.restype = c_bool
+    _libmx.mxIsLogicalScalar_800.argtypes = [mxArray_p]
+    _libmx.mxIsLogicalScalarTrue_800.restype = c_bool
+    _libmx.mxIsLogicalScalarTrue_800.argtypes = [mxArray_p]
+    _libmx.mxCreateDoubleScalar_800.restype = mxArray_p
+    _libmx.mxCreateDoubleScalar_800.argtypes = [c_double]
+    _libmx.mxCreateSparse_800.restype = mxArray_p
+    _libmx.mxCreateSparse_800.argtypes = [c_size_t, c_size_t, c_size_t, c_int]
+    _libmx.mxCreateSparseLogicalMatrix_800.restype = mxArray_p
+    _libmx.mxCreateSparseLogicalMatrix_800.argtypes = [c_size_t, c_size_t, c_size_t]
+    _libmx.mxGetNChars_800.argtypes = [mxArray_p, c_char_p, c_size_t]
+    _libmx.mxGetString_800.restype = c_int
+    _libmx.mxGetString_800.argtypes = [mxArray_p, c_char_p, c_size_t]
+    _libmx.mxArrayToString_800.restype = c_char_p
+    _libmx.mxArrayToString_800.argtypes = [mxArray_p]
+    _libmx.mxArrayToUTF8String_800.restype = c_char_p
+    _libmx.mxArrayToUTF8String_800.argtypes = [mxArray_p]
+    _libmx.mxCreateStringFromNChars_800.restype = mxArray_p
+    _libmx.mxCreateStringFromNChars_800.argtypes = [c_char_p, c_size_t]
+    _libmx.mxCreateString_800.restype = mxArray_p
+    _libmx.mxCreateString_800.argtypes = [c_char_p]
+    _libmx.mxCreateCharMatrixFromStrings_800.restype = mxArray_p
+    _libmx.mxCreateCharMatrixFromStrings_800.argtypes = [c_size_t, POINTER(c_char_p)]
+    _libmx.mxCreateCellMatrix_800.restype = mxArray_p
+    _libmx.mxCreateCellMatrix_800.argtypes = [c_size_t, c_size_t]
+    _libmx.mxCreateCellArray_800.restype = mxArray_p
+    _libmx.mxCreateCellArray_800.argtypes = [c_size_t, POINTER(c_size_t)]
+    _libmx.mxCreateStructMatrix_800.restype = mxArray_p
+    _libmx.mxCreateStructMatrix_800.argtypes = [
+        c_size_t,
+        c_size_t,
+        c_int,
+        POINTER(c_char_p),
+    ]
+    _libmx.mxCreateStructArray_800.restype = mxArray_p
+    _libmx.mxCreateStructArray_800.argtypes = [
+        c_size_t,
+        POINTER(c_size_t),
+        c_int,
+        POINTER(c_char_p),
+    ]
+    _libmx.mxDuplicateArray_800.restype = mxArray_p
+    _libmx.mxDuplicateArray_800.argtypes = [mxArray_p]
+    _libmx.mxSetClassName_800.restype = c_int
+    _libmx.mxSetClassName_800.argtypes = [mxArray_p, c_char_p]
+    _libmx.mxAddField_800.restype = c_int
+    _libmx.mxAddField_800.argtypes = [mxArray_p, c_char_p]
+    _libmx.mxRemoveField_800.argtypes = [mxArray_p, c_int]
+    _libmx.mxGetEps_800.restype = c_double
+    _libmx.mxGetInf_800.restype = c_double
+    _libmx.mxGetNaN_800.restype = c_double
+    _libmx.mxIsFinite_800.restype = c_bool
+    _libmx.mxIsFinite_800.argtypes = [c_double]
+    _libmx.mxIsInf_800.restype = c_bool
+    _libmx.mxIsInf_800.argtypes = [c_double]
+    _libmx.mxIsNaN_800.restype = c_bool
+    _libmx.mxIsNaN_800.argtypes = [c_double]
+
+    _libmx.mxGetDoubles_800.restype = POINTER(c_double)
+    _libmx.mxGetDoubles_800.argtypes = [mxArray_p]
+    _libmx.mxGetSingles_800.restype = POINTER(c_float)
+    _libmx.mxGetSingles_800.argtypes = [mxArray_p]
+    _libmx.mxGetInt8s_800.restype = POINTER(c_int8)
+    _libmx.mxGetInt8s_800.argtypes = [mxArray_p]
+    _libmx.mxGetUint8s_800.restype = POINTER(c_uint8)
+    _libmx.mxGetUint8s_800.argtypes = [mxArray_p]
+    _libmx.mxGetInt16s_800.restype = POINTER(c_int16)
+    _libmx.mxGetInt16s_800.argtypes = [mxArray_p]
+    _libmx.mxGetUint16s_800.restype = POINTER(c_uint16)
+    _libmx.mxGetUint16s_800.argtypes = [mxArray_p]
+    _libmx.mxGetInt32s_800.restype = POINTER(c_int32)
+    _libmx.mxGetInt32s_800.argtypes = [mxArray_p]
+    _libmx.mxGetUint32s_800.restype = POINTER(c_uint32)
+    _libmx.mxGetUint32s_800.argtypes = [mxArray_p]
+    _libmx.mxGetInt64s_800.restype = POINTER(c_int64)
+    _libmx.mxGetInt64s_800.argtypes = [mxArray_p]
+    _libmx.mxGetUint64s_800.restype = POINTER(c_uint64)
+    _libmx.mxGetUint64s_800.argtypes = [mxArray_p]
+
+    _libmx.mxGetComplexDoubles_800.restype = POINTER(Complex64)
+    _libmx.mxGetComplexDoubles_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexSingles_800.restype = POINTER(Complex32)
+    _libmx.mxGetComplexSingles_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexInt8s_800.restype = POINTER(ComplexI8)
+    _libmx.mxGetComplexInt8s_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexUint8s_800.restype = POINTER(ComplexU8)
+    _libmx.mxGetComplexUint8s_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexInt16s_800.restype = POINTER(ComplexI16)
+    _libmx.mxGetComplexInt16s_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexUint16s_800.restype = POINTER(ComplexU16)
+    _libmx.mxGetComplexUint16s_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexInt32s_800.restype = POINTER(ComplexI32)
+    _libmx.mxGetComplexInt32s_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexUint32s_800.restype = POINTER(ComplexU32)
+    _libmx.mxGetComplexUint32s_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexInt64s_800.restype = POINTER(ComplexI64)
+    _libmx.mxGetComplexInt64s_800.argtypes = [mxArray_p]
+    _libmx.mxGetComplexUint64s_800.restype = POINTER(ComplexU64)
+    _libmx.mxGetComplexUint64s_800.argtypes = [mxArray_p]
 
 
 class libMATException(Exception):
