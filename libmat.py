@@ -1,15 +1,72 @@
 # Wrapper class for _libmat MATLAB C API to Read MAT-File Data
 
+import winreg
 from ctypes import *
 import numpy as np
 import platform
 import os
 import sys
 
+matlabdir = ""
 
 # to hold ctypes.cdll objects
 _libmat = None
 _libmx = None
+
+
+def get_matlab_dir():
+    global matlabdir
+    if not matlabdir:
+        matlabdir = {
+            "Linux": _find_matlab_linux,
+            "Darwin": _find_matlab_mac,
+            "Windows": _find_matlab_win,
+        }[platform.system()]()
+    return matlabdir
+
+
+def set_matlab_dir(newdir):
+    global matlabdir
+    if not os.path.exists(newdir):
+        raise Exception("Specified directory does not exist.")
+    matlabdir = newdir
+
+
+def _find_matlab_win():
+    # * Windows: The installed versions of Matlab/MCR are retrieved from the
+    #   Windows registry
+    _matdirs = dict()
+    with winreg.ConnectRegistry(None, winreg.HKEY_LOCAL_MACHINE) as aReg:
+        with winreg.OpenKey(aReg, r"SOFTWARE\\MathWorks") as aKey:
+            # R2019a
+            # property_handler
+            for i in range(1024):
+                try:
+                    asubkey_name = winreg.EnumKey(aKey, i)
+                    if asubkey_name[0] == "R":
+                        _matdirs[asubkey_name] = winreg.QueryValue(
+                            aKey, asubkey_name + r"\\MATLAB"
+                        )
+                except EnvironmentError:
+                    break
+    return _matdirs[max(list(_matdirs))]
+
+
+def _find_matlab_mac():
+    # * OS X: The installed versions of Matlab/MCR are given by the MATLAB
+    #   default installation paths in ``/Application``.
+    _matdirs = [
+        file.name.path
+        for file in os.scandir("/Applications")
+        if file.name.startwith("MATLAB_R")
+    ]
+    return _matdirs[max(_matdirs)] + "/bin"
+
+
+def _find_matlab_linux():
+    return ""
+
+
 class MATFile(Structure):  # C API opaque objects
     pass
 
@@ -62,6 +119,7 @@ class ComplexI64(Structure):
 
 class ComplexU64(Structure):
     _fields_ = [("real", c_uint64), ("imag", c_uint64)]
+
 
 libexts = {'Linux': '.so',
            'Darwin': '.dylib',
